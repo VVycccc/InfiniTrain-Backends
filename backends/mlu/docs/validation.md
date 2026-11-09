@@ -157,3 +157,63 @@ server batch. No PASS result for these new cases exists yet.
 - These are staged-run observations from the corresponding changes. The branch
   keeps the existing InfiniTrain submodule revision and the original accuracy
   thresholds.
+
+
+## 2026-11-09: backward-group cases executed on device + GPT-2 FP32 10 steps with a correctly aligned checkpoint
+
+Environment: aisoft-node2 (Cambricon MLU590), docker `cambricon-base/pytorch:v26.06.0-torch2.12.0-torchmlu1.33.1-ubuntu24.04-py312`,
+cncc 5.7.2, GCC 13.3.0, CMake 3.30, Ninja 1.13, fresh build dir `build-collab` at this commit (ea5d11c),
+submodule at the pinned `c90338c` (v0.7.0).
+
+### op_test (previously "source prepared; build/device pending")
+
+| Item | Result |
+|---|---|
+| Default suite (35 FP32 small-shape cases) | `RESULT: PASS` (re-confirmed on this server) |
+| `op_test --backward-group all` (EmbeddingBackward, CrossEntropyBackward, AccumulateGrad, SoftmaxBackward x3 masks, LayerNormBackward, Matmul backward 2D + batched) | `RESULT: PASS` — **first device execution**; every case PASS with max_abs <= 9.6e-7 |
+
+### Checkpoint layout: the loader expects the grouped layout, NOT llm.c interleaved
+
+`LoadFromLLMC` reads parameters grouped by type across layers
+(`ln_1.weight` for all layers, then `ln_1.bias` for all layers, then `c_attn.weight` for all layers, ...),
+not llm.c's per-layer interleaved order. Feeding an llm.c-interleaved export silently misaligns every
+parameter after `h0.ln_1.weight` (the bias row is read from inside `h0.qkvw`). Observed symptom:
+GPT-2 step-1 loss 18.21 instead of ~4.96, identical on CPU and MLU (backend kernels are not at fault).
+
+Diagnosis path that may save others the same three hours: run the example with
+`--precision_check "level=1,save_tensors=true,output_path=<dir>"` (dumps one .npy per module),
+then compare against a NumPy reference forward; the first divergent module was
+`transformer.h.0.ln_1_forward`, and fitting `out = x_norm * w + b` per channel recovered the
+exact file offset the loader had misread.
+
+`backends/mlu/tools/export_gpt2_llmc_grouped.py` (numpy-only) produces the layout the loader
+expects from a HF `model.safetensors`; verified against HF `openai-community/gpt2` (124M).
+
+### GPT-2 124M FP32, single card, 10 steps (batch 4 x seq 64, total batch 256, SGD lr 1e-4, overfit single batch)
+
+Data: standard llm.c tiny_shakespeare train split, 301,966 tokens. This is NOT the frozen
+A100 reference asset (305,260 tokens), so per-step comparison against that baseline remains
+diagnostic only; the acceptance below is cross-device agreement on the identical batch.
+
+| step | MLU loss | CPU loss | abs diff |
+|---|---|---|---|
+| 1 | 4.961767 | 4.961770 | 3e-06 |
+| 2 | 5.113737 | 5.113658 | 8e-05 |
+| 3 | 5.463838 | 5.463693 | 1.5e-04 |
+| 4 | 5.076122 | 5.076038 | 8e-05 |
+| 5 | 5.159688 | 5.159536 | 1.5e-04 |
+| 6 | 5.120875 | 5.120900 | 3e-05 |
+| 7 | 4.988027 | 4.987971 | 6e-05 |
+| 8 | 5.156721 | 5.156620 | 1e-04 |
+| 9 | 4.860516 | 4.860461 | 6e-05 |
+| 10 | 5.000969 | 5.000990 | 2e-05 |
+
+- MLU completed all 10 steps without divergence, peak mem pool 1517 MB, ~650 s/step
+  (Linear/Matmul still on the host-fallback GEMM path).
+- Full logs: server `~/gpt2_mlu_10step_grouped.log`, `~/gpt2_cpu_10step_grouped.log` (not redistributed here).
+
+### Still open
+
+- Strict per-step acceptance against the frozen A100 reference (1e-5) requires the original
+  InfiniTrain-Test@5a0f27a5 data asset; GitHub was unreachable from the server during this run.
+- Device GEMM (CNNL) and BF16 backward remain as before.
