@@ -24,7 +24,8 @@ if(NOT EXISTS "${NEUWARE_HOME}/include/cnrt.h")
 endif()
 
 # The framework is built for its CPU backend; CUDA/NCCL belong to other
-# providers and multi-card collectives are not implemented for MLU yet.
+# providers. MLU multi-card collectives are provided by CNCL (the CnclImpl in
+# backends/mlu/src/core/ccl/), not by CUDA/NCCL, so USE_NCCL stays OFF here.
 set(USE_CUDA OFF)
 set(USE_NCCL OFF)
 set(BUILD_SHARED_LIBS OFF)

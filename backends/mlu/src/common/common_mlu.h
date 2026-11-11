@@ -35,10 +35,15 @@ namespace infini_train::common::mlu {
 #endif
 
 #ifdef USE_CNCL
+// cncl.h 自带了一个同名的 CNCL_CHECK 宏（printf 版本），这里先取消它的定义，
+// 换成走 glog LOG(FATAL) 的版本，与本后端其它 *_CHECK 宏保持一致的错误处理风格。
+#ifdef CNCL_CHECK
+#undef CNCL_CHECK
+#endif
 #define CNCL_CHECK(expr)                                                                                               \
     do {                                                                                                               \
         cnclResult_t _status = (expr);                                                                                 \
-        if (_status != cnclSuccess) {                                                                                  \
+        if (_status != CNCL_RET_SUCCESS) {                                                                             \
             LOG(FATAL) << "CNCL error: " << cnclGetErrorStr(_status) << " at " << __FILE__ << ":" << __LINE__ << " ("  \
                        << #expr << ")";                                                                                \
         }                                                                                                              \

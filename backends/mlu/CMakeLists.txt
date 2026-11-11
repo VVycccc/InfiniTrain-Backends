@@ -23,6 +23,23 @@ if(INFINITRAIN_MLU_WITH_CNNL)
   endif()
 endif()
 
+# CNCL: the Cambricon collective communication library (the MLU analogue of
+# NCCL). When present, the CnclImpl in src/core/ccl/ is compiled and registered
+# as the kPrivateUse1 CCL backend, enabling single-process multi-card DP via
+# the framework's ProcessGroup / DDP path. When absent the build still produces
+# a working single-card runtime.
+option(INFINITRAIN_MLU_WITH_CNCL "Compile the CNCL collective communication backend" ON)
+if(INFINITRAIN_MLU_WITH_CNCL)
+  find_library(CNCL_LIBRARY cncl HINTS "${NEUWARE_HOME}/lib64")
+  if(NOT CNCL_LIBRARY OR NOT EXISTS "${NEUWARE_HOME}/include/cncl.h")
+    message(WARNING
+      "CNCL was not found under ${NEUWARE_HOME}; configuring without "
+      "multi-card collective support. Install CNCL and reconfigure to "
+      "enable data parallelism.")
+    set(INFINITRAIN_MLU_WITH_CNCL OFF)
+  endif()
+endif()
+
 # BANG C target architecture; empty lets cncc use its default.
 set(MLU_ARCH "" CACHE STRING "BANG C target arch, for example mtp_592")
 
@@ -36,6 +53,8 @@ set(MLU_BACKEND_SOURCES
   src/backend.cc
   src/runtime/mlu_runtime_common.cc
   src/runtime/mlu_guard_impl.cc
+  src/core/ccl/cncl_common.cc
+  src/core/ccl/cncl_impl.cc
   src/kernels/no_op.cc
   src/kernels/fill.cc
   src/kernels/cast.cc
@@ -74,6 +93,15 @@ target_link_libraries(infini_train_mlu PUBLIC
 if(INFINITRAIN_MLU_WITH_CNNL)
   target_compile_definitions(infini_train_mlu PUBLIC USE_CNNL=1)
   target_link_libraries(infini_train_mlu PUBLIC ${CNNL_LIBRARY})
+endif()
+
+# CNCL: compile CnclImpl under USE_CNCL and link libcncl. The static
+# registration in cncl_impl.cc registers a CclImpl for kPrivateUse1, which is
+# only discovered if this TU is linked --whole-archive; that is handled by the
+# MLUExecutable interface below.
+if(INFINITRAIN_MLU_WITH_CNCL)
+  target_compile_definitions(infini_train_mlu PUBLIC USE_CNCL=1)
+  target_link_libraries(infini_train_mlu PUBLIC ${CNCL_LIBRARY})
 endif()
 
 # ------------------------------------------------------------------------------
