@@ -23,14 +23,13 @@ size_t CnclUniqueId::Size() const { return sizeof(id_); }
 const void *CnclUniqueId::Data() const { return &id_; }
 
 void CnclUniqueId::Load(const void *src, size_t size) {
-  CHECK_NOTNULL(src);
-  CHECK_EQ(size, sizeof(id_))
-      << "CnclUniqueId size mismatch: expected " << sizeof(id_) << ", got " << size;
-  std::memcpy(&id_, src, sizeof(id_));
+    CHECK_NOTNULL(src);
+    CHECK_EQ(size, sizeof(id_)) << "CnclUniqueId size mismatch: expected " << sizeof(id_) << ", got " << size;
+    std::memcpy(&id_, src, sizeof(id_));
 }
 
 cnclCliqueId *CnclUniqueId::cncl_clique_id() { return &id_; }
 
 const cnclCliqueId *CnclUniqueId::cncl_clique_id() const { return &id_; }
 
-}  // namespace infini_train::core
+} // namespace infini_train::core

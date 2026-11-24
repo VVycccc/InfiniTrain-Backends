@@ -40,19 +40,19 @@ import numpy as np
 
 
 def load_safetensors(path):
-    with open(path, 'rb') as f:
-        n = struct.unpack('<Q', f.read(8))[0]
+    with open(path, "rb") as f:
+        n = struct.unpack("<Q", f.read(8))[0]
         header = json.loads(f.read(n))
     tensors = {}
     for name, info in header.items():
-        if name == '__metadata__':
+        if name == "__metadata__":
             continue
-        assert info['dtype'] == 'F32', f'unexpected dtype {info["dtype"]} for {name}'
-        end = info['data_offsets'][1] - info['data_offsets'][0]
-        with open(path, 'rb') as f:
-            f.seek(8 + n + info['data_offsets'][0])
+        assert info["dtype"] == "F32", f'unexpected dtype {info["dtype"]} for {name}'
+        end = info["data_offsets"][1] - info["data_offsets"][0]
+        with open(path, "rb") as f:
+            f.seek(8 + n + info["data_offsets"][0])
             buf = f.read(end)
-        tensors[name] = np.frombuffer(buf, dtype=np.float32).reshape(info['shape'])
+        tensors[name] = np.frombuffer(buf, dtype=np.float32).reshape(info["shape"])
     return tensors
 
 
@@ -67,13 +67,13 @@ def main():
         sys.exit(2)
     src, out = sys.argv[1], sys.argv[2]
     t = load_safetensors(src)
-    C = t['h.0.ln_1.weight'].shape[0]
-    L = len({k.split('.')[1] for k in t if k.startswith('h.')})
-    T = t['wpe.weight'].shape[0]
-    V = t['wte.weight'].shape[0]
+    C = t["h.0.ln_1.weight"].shape[0]
+    L = len({k.split(".")[1] for k in t if k.startswith("h.")})
+    T = t["wpe.weight"].shape[0]
+    V = t["wte.weight"].shape[0]
     PV = (V + 127) // 128 * 128
     NH = C // 64
-    print(f'C={C} L={L} T={T} V={V} padded={PV} n_head={NH}')
+    print(f"C={C} L={L} T={T} V={V} padded={PV} n_head={NH}")
 
     header = np.zeros(256, dtype=np.int32)
     header[0], header[1], header[2], header[3] = 20240326, 3, T, V
@@ -82,40 +82,41 @@ def main():
     def wr(a):
         f.write(np.ascontiguousarray(a, dtype=np.float32).tobytes())
 
-    with open(out, 'wb') as f:
+    with open(out, "wb") as f:
         f.write(header.tobytes())
-        wr(t['wte.weight'])
+        wr(t["wte.weight"])
         wr(np.zeros((PV - V, C), dtype=np.float32))
-        wr(t['wpe.weight'])
+        wr(t["wpe.weight"])
         for i in range(L):
-            wr(t[f'h.{i}.ln_1.weight'])
+            wr(t[f"h.{i}.ln_1.weight"])
         for i in range(L):
-            wr(t[f'h.{i}.ln_1.bias'])
+            wr(t[f"h.{i}.ln_1.bias"])
         for i in range(L):
-            wr(w2d(t, f'h.{i}.attn.c_attn.weight'))
+            wr(w2d(t, f"h.{i}.attn.c_attn.weight"))
         for i in range(L):
-            wr(t[f'h.{i}.attn.c_attn.bias'])
+            wr(t[f"h.{i}.attn.c_attn.bias"])
         for i in range(L):
-            wr(w2d(t, f'h.{i}.attn.c_proj.weight'))
+            wr(w2d(t, f"h.{i}.attn.c_proj.weight"))
         for i in range(L):
-            wr(t[f'h.{i}.attn.c_proj.bias'])
+            wr(t[f"h.{i}.attn.c_proj.bias"])
         for i in range(L):
-            wr(t[f'h.{i}.ln_2.weight'])
+            wr(t[f"h.{i}.ln_2.weight"])
         for i in range(L):
-            wr(t[f'h.{i}.ln_2.bias'])
+            wr(t[f"h.{i}.ln_2.bias"])
         for i in range(L):
-            wr(w2d(t, f'h.{i}.mlp.c_fc.weight'))
+            wr(w2d(t, f"h.{i}.mlp.c_fc.weight"))
         for i in range(L):
-            wr(t[f'h.{i}.mlp.c_fc.bias'])
+            wr(t[f"h.{i}.mlp.c_fc.bias"])
         for i in range(L):
-            wr(w2d(t, f'h.{i}.mlp.c_proj.weight'))
+            wr(w2d(t, f"h.{i}.mlp.c_proj.weight"))
         for i in range(L):
-            wr(t[f'h.{i}.mlp.c_proj.bias'])
-        wr(t['ln_f.weight'])
-        wr(t['ln_f.bias'])
+            wr(t[f"h.{i}.mlp.c_proj.bias"])
+        wr(t["ln_f.weight"])
+        wr(t["ln_f.bias"])
     import os
-    print('wrote', out, os.path.getsize(out), 'bytes')
+
+    print("wrote", out, os.path.getsize(out), "bytes")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
